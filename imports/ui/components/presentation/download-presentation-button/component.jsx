@@ -1,5 +1,5 @@
 import React from 'react';
-import { defineMessages, injectIntl, intlShape } from 'react-intl';
+import { defineMessages, injectIntl } from 'react-intl';
 import Button from '/imports/ui/components/button/component';
 import cx from 'classnames';
 import PropTypes from 'prop-types';
@@ -13,7 +13,7 @@ const intlMessages = defineMessages({
 });
 
 const propTypes = {
-  intl: intlShape.isRequired,
+  intl: PropTypes.object.isRequired,
   handleDownloadPresentation: PropTypes.func.isRequired,
   dark: PropTypes.bool,
 };
@@ -23,21 +23,32 @@ const defaultProps = {
 };
 
 const DownloadPresentationButton = ({
-  intl, handleDownloadPresentation, dark,
-}) => (
-  <div className={cx(styles.wrapper, dark ? styles.dark : styles.light)}>
-    <Button
-      color="default"
-      icon="template_download"
-      size="sm"
-      onClick={handleDownloadPresentation}
-      label={intl.formatMessage(intlMessages.downloadPresentationButton)}
-      hideLabel
-      circle
-      className={styles.button}
-    />
-  </div>
-);
+  intl,
+  handleDownloadPresentation,
+  dark,
+}) => {
+
+  const wrapperClassName = cx({
+    [styles.wrapper]: true,
+    [styles.dark]: dark,
+    [styles.light]: !dark
+  });
+
+  return (
+    <div className={wrapperClassName}>
+      <Button
+        data-test="presentationDownload"
+        color="default"
+        icon="template_download"
+        size="sm"
+        onClick={handleDownloadPresentation}
+        label={intl.formatMessage(intlMessages.downloadPresentationButton)}
+        hideLabel
+        className={cx(styles.button, styles.downloadPresentationButton)}
+      />
+    </div>
+  );
+};
 
 DownloadPresentationButton.propTypes = propTypes;
 DownloadPresentationButton.defaultProps = defaultProps;

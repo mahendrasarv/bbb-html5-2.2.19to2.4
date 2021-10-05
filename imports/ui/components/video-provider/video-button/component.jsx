@@ -2,8 +2,11 @@ import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import cx from 'classnames';
 import Button from '/imports/ui/components/button/component';
-import { defineMessages, injectIntl, intlShape } from 'react-intl';
+import VideoService from '../service';
+import { defineMessages, injectIntl } from 'react-intl';
 import { styles } from './styles';
+import { validIOSVersion } from '/imports/ui/components/app/service';
+import { debounce } from 'lodash';
 
 const intlMessages = defineMessages({
   joinVideo: {
@@ -14,13 +17,17 @@ const intlMessages = defineMessages({
     id: 'app.video.leaveVideo',
     description: 'Leave video button label',
   },
-  videoButtonDesc: {
-    id: 'app.video.videoButtonDesc',
-    description: 'video button description',
-  },
   videoLocked: {
     id: 'app.video.videoLocked',
     description: 'video disabled label',
+  },
+  videoConnecting: {
+    id: 'app.video.connecting',
+    description: 'video connecting label',
+  },
+  meteorDisconnected: {
+    id: 'app.video.clientDisconnected',
+    description: 'Meteor disconnected label',
   },
   iOSWarning: {
     id: 'app.iOSWarning.label',
@@ -28,56 +35,57 @@ const intlMessages = defineMessages({
   },
 });
 
+const JOIN_VIDEO_DELAY_MILLISECONDS = 500;
+
 const propTypes = {
-  intl: intlShape.isRequired,
-  isSharingVideo: PropTypes.bool.isRequired,
-  isDisabled: PropTypes.bool.isRequired,
-  handleJoinVideo: PropTypes.func.isRequired,
-  handleCloseVideo: PropTypes.func.isRequired,
+  intl: PropTypes.object.isRequired,
+  hasVideoStream: PropTypes.bool.isRequired,
+  mountVideoPreview: PropTypes.func.isRequired,
 };
 
 const JoinVideoButton = ({
   intl,
-  isSharingVideo,
-  isDisabled,
-  handleJoinVideo,
-  handleCloseVideo,
-  notify,
-  validIOSVersion,
+  hasVideoStream,
+  disableReason,
+  mountVideoPreview,
 }) => {
-  const verifyIOS = () => {
+  const exitVideo = () => hasVideoStream && !VideoService.isMultipleCamerasEnabled();
+
+  const handleOnClick = debounce(() => {
     if (!validIOSVersion()) {
-      return notify(
-        intl.formatMessage(intlMessages.iOSWarning),
-        'error',
-        'warning',
-      );
+      return VideoService.notify(intl.formatMessage(intlMessages.iOSWarning));
     }
-    handleJoinVideo();
-  };
 
-  const sharingVideoLabel = isSharingVideo
-    ? intl.formatMessage(intlMessages.leaveVideo) : intl.formatMessage(intlMessages.joinVideo);
+    if (exitVideo()) {
+      VideoService.exitVideo();
+    } else {
+      mountVideoPreview();
+    }
+  }, JOIN_VIDEO_DELAY_MILLISECONDS);
 
-  const disabledLabel = isDisabled
-    ? intl.formatMessage(intlMessages.videoLocked) : sharingVideoLabel;
+  let label = exitVideo()
+    ? intl.formatMessage(intlMessages.leaveVideo)
+    : intl.formatMessage(intlMessages.joinVideo);
+
+  if (disableReason) label = intl.formatMessage(intlMessages[disableReason]);
 
   return (
     <Button
-      label={disabledLabel}
-      className={cx(styles.button, isSharingVideo || styles.btn)}
-      onClick={isSharingVideo ? handleCloseVideo : verifyIOS}
+      label={label}
+      data-test={hasVideoStream ? 'leaveVideo' : 'joinVideo'}
+      className={cx(hasVideoStream || styles.btn)}
+      onClick={handleOnClick}
       hideLabel
-      aria-label={intl.formatMessage(intlMessages.videoButtonDesc)}
-      color={isSharingVideo ? 'primary' : 'default'}
-      icon={isSharingVideo ? 'video' : 'video_off'}
-      ghost={!isSharingVideo}
+      color={hasVideoStream ? 'primary' : 'default'}
+      icon={hasVideoStream ? 'video' : 'video_off'}
+      ghost={!hasVideoStream}
       size="lg"
       circle
-      disabled={isDisabled}
+      disabled={!!disableReason}
     />
   );
 };
 
 JoinVideoButton.propTypes = propTypes;
+
 export default injectIntl(memo(JoinVideoButton));

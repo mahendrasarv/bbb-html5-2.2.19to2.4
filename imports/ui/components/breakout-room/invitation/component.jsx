@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Session } from 'meteor/session';
 import { withModalMounter } from '/imports/ui/components/modal/service';
 import BreakoutJoinConfirmation from '/imports/ui/components/breakout-join-confirmation/container';
+import BreakoutService from '../service';
 
 const BREAKOUT_MODAL_DELAY = 200;
 
@@ -33,8 +34,6 @@ const openBreakoutJoinConfirmation = (breakout, breakoutName, mountModal) => mou
   />,
 );
 
-const closeBreakoutJoinConfirmation = mountModal => mountModal(null);
-
 class BreakoutRoomInvitation extends Component {
   constructor(props) {
     super(props);
@@ -56,7 +55,6 @@ class BreakoutRoomInvitation extends Component {
   checkBreakouts(oldProps) {
     const {
       breakouts,
-      mountModal,
       currentBreakoutUser,
       getBreakoutByUser,
       breakoutUserIsIn,
@@ -66,19 +64,16 @@ class BreakoutRoomInvitation extends Component {
       didSendBreakoutInvite,
     } = this.state;
 
-    const hadBreakouts = oldProps.breakouts.length > 0;
     const hasBreakouts = breakouts.length > 0;
-    if (!hasBreakouts && hadBreakouts) {
-      closeBreakoutJoinConfirmation(mountModal);
-    }
 
-    if (hasBreakouts && !breakoutUserIsIn) {
+    if (hasBreakouts && !breakoutUserIsIn && BreakoutService.checkInviteModerators()) {
       // Have to check for freeJoin breakouts first because currentBreakoutUser will
       // populate after a room has been joined
+      const breakoutRoom = getBreakoutByUser(currentBreakoutUser);
       const freeJoinBreakout = breakouts.find(breakout => breakout.freeJoin);
       if (freeJoinBreakout) {
         if (!didSendBreakoutInvite) {
-          this.inviteUserToBreakout(freeJoinBreakout);
+          this.inviteUserToBreakout(breakoutRoom || freeJoinBreakout);
           this.setState({ didSendBreakoutInvite: true });
         }
       } else if (currentBreakoutUser) {
@@ -86,7 +81,6 @@ class BreakoutRoomInvitation extends Component {
         const oldCurrentUser = oldProps.currentBreakoutUser || {};
         const oldInsertedTime = oldCurrentUser.insertedTime;
         if (currentInsertedTime !== oldInsertedTime) {
-          const breakoutRoom = getBreakoutByUser(currentBreakoutUser);
           const breakoutId = Session.get('lastBreakoutOpened');
           if (breakoutRoom.breakoutId !== breakoutId) {
             this.inviteUserToBreakout(breakoutRoom);

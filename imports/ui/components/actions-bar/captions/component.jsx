@@ -1,12 +1,14 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import cx from 'classnames';
-import { defineMessages, injectIntl, intlShape } from 'react-intl';
+import { defineMessages, injectIntl } from 'react-intl';
 import { styles } from '/imports/ui/components/actions-bar/styles';
 import Button from '/imports/ui/components/button/component';
 
 const propTypes = {
-  intl: intlShape.isRequired,
+  intl: PropTypes.shape({
+    formatMessage: PropTypes.func.isRequired,
+  }).isRequired,
   isActive: PropTypes.bool.isRequired,
   handleOnClick: PropTypes.func.isRequired,
 };
@@ -24,7 +26,7 @@ const intlMessages = defineMessages({
 
 const CaptionsButton = ({ intl, isActive, handleOnClick }) => (
   <Button
-    className={cx(styles.button, isActive || styles.btn)}
+    className={cx(isActive || styles.btn)}
     icon="closed_caption"
     label={intl.formatMessage(isActive ? intlMessages.stop : intlMessages.start)}
     color={isActive ? 'primary' : 'default'}

@@ -5,11 +5,9 @@ import { withModalMounter } from '/imports/ui/components/modal/service';
 import PropTypes from 'prop-types';
 import Modal from '/imports/ui/components/modal/simple/component';
 import Button from '/imports/ui/components/button/component';
+import LocalesDropdown from '/imports/ui/components/locales-dropdown/component';
 import { styles } from './styles';
-
-const DEFAULT_VALUE = 'select';
-
-const DEFAULT_KEY = -1;
+import { PANELS, ACTIONS } from '../../layout/enums';
 
 const intlMessages = defineMessages({
   closeLabel: {
@@ -48,7 +46,7 @@ const intlMessages = defineMessages({
 
 const propTypes = {
   takeOwnership: PropTypes.func.isRequired,
-  availableLocales: PropTypes.arrayOf(PropTypes.object).isRequired,
+  allLocales: PropTypes.arrayOf(PropTypes.object).isRequired,
   closeModal: PropTypes.func.isRequired,
   intl: PropTypes.shape({
     formatMessage: PropTypes.func.isRequired,
@@ -58,10 +56,10 @@ const propTypes = {
 class WriterMenu extends PureComponent {
   constructor(props) {
     super(props);
-    const { availableLocales, intl } = this.props;
+    const { allLocales, intl } = this.props;
 
-    const candidate = availableLocales.filter(
-      l => l.locale.substring(0, 2) === intl.locale.substring(0, 2),
+    const candidate = allLocales.filter(
+      (l) => l.locale.substring(0, 2) === intl.locale.substring(0, 2),
     );
 
     this.state = {
@@ -72,17 +70,31 @@ class WriterMenu extends PureComponent {
     this.handleStart = this.handleStart.bind(this);
   }
 
+  componentWillUnmount() {
+    const { closeModal } = this.props;
+
+    closeModal();
+  }
+
   handleChange(event) {
     this.setState({ locale: event.target.value });
   }
 
   handleStart() {
-    const { closeModal, takeOwnership } = this.props;
+    const { closeModal, takeOwnership, layoutContextDispatch } = this.props;
     const { locale } = this.state;
 
     takeOwnership(locale);
     Session.set('captionsLocale', locale);
-    Session.set('openPanel', 'captions');
+
+    layoutContextDispatch({
+      type: ACTIONS.SET_SIDEBAR_CONTENT_IS_OPEN,
+      value: true,
+    });
+    layoutContextDispatch({
+      type: ACTIONS.SET_SIDEBAR_CONTENT_PANEL,
+      value: PANELS.CAPTIONS,
+    });
 
     closeModal();
   }
@@ -90,12 +102,12 @@ class WriterMenu extends PureComponent {
   render() {
     const {
       intl,
-      availableLocales,
+      allLocales,
       closeModal,
     } = this.props;
 
     const { locale } = this.state;
-    const defaultLocale = locale || DEFAULT_VALUE;
+
     return (
       <Modal
         overlayClassName={styles.overlay}
@@ -110,29 +122,25 @@ class WriterMenu extends PureComponent {
           </h3>
         </header>
         <div className={styles.content}>
-          <label>
+          <span>
             {intl.formatMessage(intlMessages.subtitle)}
-          </label>
+          </span>
+          {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
           <label
             aria-hidden
             htmlFor="captionsLangSelector"
             aria-label={intl.formatMessage(intlMessages.ariaSelect)}
           />
-          <select
-            id="captionsLangSelector"
-            className={styles.select}
-            onChange={this.handleChange}
-            defaultValue={defaultLocale}
-          >
-            <option disabled key={DEFAULT_KEY} value={DEFAULT_VALUE}>
-              {intl.formatMessage(intlMessages.select)}
-            </option>
-            {availableLocales.map(localeItem => (
-              <option key={localeItem.locale} value={localeItem.locale}>
-                {localeItem.name}
-              </option>
-            ))}
-          </select>
+
+          <LocalesDropdown
+            allLocales={allLocales}
+            handleChange={this.handleChange}
+            value={locale}
+            elementId="captionsLangSelector"
+            elementClass={styles.select}
+            selectMessage={intl.formatMessage(intlMessages.select)}
+          />
+
           <Button
             className={styles.startBtn}
             label={intl.formatMessage(intlMessages.start)}

@@ -31,35 +31,41 @@ export default function handlePresenterAssigned({ body }, meetingId) {
 
   const prevPresenter = Users.findOne(selector);
 
+  const defaultPodSelector = {
+    meetingId,
+    podId: 'DEFAULT_PRESENTATION_POD',
+  };
+
+  const currentDefaultPod = PresentationPods.findOne(defaultPodSelector);
+
+  const setPresenterPayload = {
+    meetingId,
+    requesterUserId: assignedBy,
+    presenterId,
+  };
+
   // no previous presenters
   // The below code is responsible for set Meeting presenter to be default pod presenter as well.
   // It's been handled here because right now akka-apps don't handle all cases scenarios.
   if (!prevPresenter) {
-    const setPresenterPayload = {
-      meetingId,
-      requesterUserId: assignedBy,
-      presenterId,
-    };
-
-    const defaultPodSelector = {
-      meetingId,
-      podId: 'DEFAULT_PRESENTATION_POD',
-    };
-    const currentDefaultPodPresenter = PresentationPods.findOne(defaultPodSelector);
-    const { currentPresenterId } = currentDefaultPodPresenter;
+    const { currentPresenterId } = currentDefaultPod;
 
     if (currentPresenterId === '') {
       return setPresenterInPodReqMsg(setPresenterPayload);
     }
 
-    const oldPresenter = Users.findOne({ meetingId, userId: currentPresenterId, connectionStatus: 'offline' });
+    const oldPresenter = Users.findOne({ meetingId, userId: currentPresenterId });
 
-    if (oldPresenter) {
+    if (oldPresenter?.userId !== currentPresenterId) {
       return setPresenterInPodReqMsg(setPresenterPayload);
     }
 
     return true;
   }
 
-  return changePresenter(false, prevPresenter.userId, meetingId, assignedBy);
+  if (currentDefaultPod && currentDefaultPod.currentPresenterId !== presenterId) {
+    setPresenterInPodReqMsg(setPresenterPayload);
+  }
+
+  changePresenter(false, prevPresenter.userId, meetingId, assignedBy);
 }

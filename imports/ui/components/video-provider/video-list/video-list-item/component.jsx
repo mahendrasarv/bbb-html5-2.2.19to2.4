@@ -1,31 +1,20 @@
 import React, { Component } from 'react';
-import browser from 'browser-detect';
+import browserInfo from '/imports/utils/browserInfo';
 import { Meteor } from 'meteor/meteor';
 import PropTypes from 'prop-types';
-import _ from 'lodash';
 import cx from 'classnames';
-import { defineMessages, injectIntl, intlShape } from 'react-intl';
-import Dropdown from '/imports/ui/components/dropdown/component';
-import DropdownTrigger from '/imports/ui/components/dropdown/trigger/component';
-import DropdownContent from '/imports/ui/components/dropdown/content/component';
-import DropdownList from '/imports/ui/components/dropdown/list/component';
-import DropdownListTitle from '/imports/ui/components/dropdown/list/title/component';
-import DropdownListSeparator from '/imports/ui/components/dropdown/list/separator/component';
-import DropdownListItem from '/imports/ui/components/dropdown/list/item/component';
+import BBBMenu from '/imports/ui/components/menu/component';
 import Icon from '/imports/ui/components/icon/component';
-import logger from '/imports/startup/client/logger';
-import VideoListItemStats from './video-list-item-stats/component';
-import FullscreenService from '../../../fullscreen-button/service';
-import FullscreenButtonContainer from '../../../fullscreen-button/container';
+import FullscreenService from '/imports/ui/components/fullscreen-button/service';
+import FullscreenButtonContainer from '/imports/ui/components/fullscreen-button/container';
 import { styles } from '../styles';
-import { withDraggableConsumer } from '../../../media/webcam-draggable-overlay/context';
 import VideoService from '../../service';
-
-const intlMessages = defineMessages({
-  connectionStatsLabel: {
-    id: 'app.video.stats.title',
-  },
-});
+import {
+  isStreamStateUnhealthy,
+  subscribeToStreamStateChange,
+  unsubscribeFromStreamStateChange,
+} from '/imports/ui/services/bbb-webrtc-sfu/stream-state-service';
+import { ACTIONS } from '/imports/ui/components/layout/enums';
 
 const ALLOW_FULLSCREEN = Meteor.settings.public.app.allowFullscreen;
 
@@ -35,33 +24,25 @@ class VideoListItem extends Component {
     this.videoTag = null;
 
     this.state = {
-      showStats: false,
-      stats: { video: {} },
       videoIsReady: false,
       isFullscreen: false,
+      isStreamHealthy: false,
     };
 
-    this.mirrorOwnWebcam = VideoService.mirrorOwnWebcam(props.user);
-    this.toggleStats = this.toggleStats.bind(this);
-    this.setStats = this.setStats.bind(this);
+    this.mirrorOwnWebcam = VideoService.mirrorOwnWebcam(props.userId);
+
     this.setVideoIsReady = this.setVideoIsReady.bind(this);
     this.onFullscreenChange = this.onFullscreenChange.bind(this);
+    this.onStreamStateChange = this.onStreamStateChange.bind(this);
   }
 
   componentDidMount() {
-    const { onMount, webcamDraggableDispatch } = this.props;
+    const { onVideoItemMount, cameraId } = this.props;
 
-    webcamDraggableDispatch(
-      {
-        type: 'setVideoRef',
-        value: this.videoTag,
-      },
-    );
-
-    onMount(this.videoTag);
-
+    onVideoItemMount(this.videoTag);
     this.videoTag.addEventListener('loadeddata', this.setVideoIsReady);
     this.videoContainer.addEventListener('fullscreenchange', this.onFullscreenChange);
+    subscribeToStreamStateChange(cameraId, this.onStreamStateChange);
   }
 
   componentDidUpdate() {
@@ -73,10 +54,6 @@ class VideoListItem extends Component {
             const tagFailedEvent = new CustomEvent('videoPlayFailed', { detail: { mediaTag: elem } });
             window.dispatchEvent(tagFailedEvent);
           }
-          logger.warn({
-            logCode: 'videolistitem_component_play_maybe_error',
-            extraInfo: { error },
-          }, `Could not play video tag due to ${error.name}`);
         });
       }
     };
@@ -90,83 +67,104 @@ class VideoListItem extends Component {
   }
 
   componentWillUnmount() {
+    const {
+      cameraId,
+      onVideoItemUnmount,
+      isFullscreenContext,
+      layoutContextDispatch,
+    } = this.props;
+
     this.videoTag.removeEventListener('loadeddata', this.setVideoIsReady);
     this.videoContainer.removeEventListener('fullscreenchange', this.onFullscreenChange);
+    unsubscribeFromStreamStateChange(cameraId, this.onStreamStateChange);
+    onVideoItemUnmount(cameraId);
+
+    if (isFullscreenContext) {
+      layoutContextDispatch({
+        type: ACTIONS.SET_FULLSCREEN_ELEMENT,
+        value: {
+          element: '',
+          group: '',
+        },
+      });
+    }
+  }
+
+  onStreamStateChange(e) {
+    const { streamState } = e.detail;
+    const { isStreamHealthy } = this.state;
+
+    const newHealthState = !isStreamStateUnhealthy(streamState);
+    e.stopPropagation();
+
+    if (newHealthState !== isStreamHealthy) {
+      this.setState({ isStreamHealthy: newHealthState });
+    }
   }
 
   onFullscreenChange() {
-    const { webcamDraggableDispatch } = this.props;
     const { isFullscreen } = this.state;
     const serviceIsFullscreen = FullscreenService.isFullScreen(this.videoContainer);
 
     if (isFullscreen !== serviceIsFullscreen) {
       this.setState({ isFullscreen: serviceIsFullscreen });
-      webcamDraggableDispatch(
-        {
-          type: 'setIsCameraFullscreen',
-          value: serviceIsFullscreen,
-        },
-      );
     }
-  }
-
-  setStats(updatedStats) {
-    const { stats } = this.state;
-    const { audio, video } = updatedStats;
-    this.setState({ stats: { ...stats, video, audio } });
   }
 
   setVideoIsReady() {
     const { videoIsReady } = this.state;
     if (!videoIsReady) this.setState({ videoIsReady: true });
     window.dispatchEvent(new Event('resize'));
+
+    /* used when re-sharing cameras after leaving a breakout room.
+    it is needed in cases where the user has more than one active camera
+    so we only share the second camera after the first
+    has finished loading (can't share more than one at the same time) */
+    Session.set('canConnect', true);
   }
 
   getAvailableActions() {
     const {
-      intl,
       actions,
-      user,
-      enableVideoStats,
+      cameraId,
+      name,
     } = this.props;
-
-    return _.compact([
-      <DropdownListTitle className={styles.hiddenDesktop} key="name">{user.name}</DropdownListTitle>,
-      <DropdownListSeparator className={styles.hiddenDesktop} key="sep" />,
-      ...actions.map(action => (<DropdownListItem key={user.userId} {...action} />)),
-      (enableVideoStats
-        ? (
-          <DropdownListItem
-            key={`list-item-stats-${user.userId}`}
-            onClick={() => { this.toggleStats(); }}
-            label={intl.formatMessage(intlMessages.connectionStatsLabel)}
-          />
-        )
-        : null),
-    ]);
-  }
-
-  toggleStats() {
-    const { getStats, stopGettingStats } = this.props;
-    const { showStats } = this.state;
-    if (showStats) {
-      stopGettingStats();
-    } else {
-      getStats(this.videoTag, this.setStats);
-    }
-    this.setState({ showStats: !showStats });
+    const MAX_WIDTH = 640;
+    const fullWidthMenu = window.innerWidth < MAX_WIDTH;
+    const menuItems = [];
+    if (fullWidthMenu) menuItems.push({
+      key: `${cameraId}-${name}`,
+      label: name,
+      onClick: () => {},
+      disabled: true,
+    })
+    actions?.map((a, i) => {
+        let topDivider = false;
+        if (i === 0 && fullWidthMenu) topDivider = true;
+        menuItems.push({
+          key: `${cameraId}-${a?.actionName}`,
+          label: a?.label,
+          description: a?.description,
+          onClick: a?.onClick,
+          dividerTop: topDivider,
+        });
+    });
+    return menuItems
   }
 
   renderFullscreenButton() {
-    const { user } = this.props;
+    const { name, cameraId } = this.props;
     const { isFullscreen } = this.state;
 
     if (!ALLOW_FULLSCREEN) return null;
 
     return (
       <FullscreenButtonContainer
+        data-test="webcamsFullscreenButton"
         fullscreenRef={this.videoContainer}
-        elementName={user.name}
+        elementName={name}
+        elementId={cameraId}
+        elementGroup="webcams"
         isFullscreen={isFullscreen}
         dark
       />
@@ -175,47 +173,65 @@ class VideoListItem extends Component {
 
   render() {
     const {
-      showStats,
-      stats,
       videoIsReady,
-      isFullscreen,
+      isStreamHealthy,
     } = this.state;
     const {
-      user,
+      name,
       voiceUser,
-      numOfUsers,
-      webcamDraggableState,
-      swapLayout,
+      numOfStreams,
+      mirrored,
+      isFullscreenContext,
     } = this.props;
     const availableActions = this.getAvailableActions();
     const enableVideoMenu = Meteor.settings.public.kurento.enableVideoMenu || false;
+    const shouldRenderReconnect = !isStreamHealthy && videoIsReady;
 
-    const result = browser();
-    const isFirefox = (result && result.name) ? result.name.includes('firefox') : false;
+    const { isFirefox } = browserInfo;
 
     return (
-      <div className={cx({
-        [styles.content]: true,
-        [styles.talking]: voiceUser.talking,
-      })}
+      <div
+        data-test={voiceUser.talking ? 'webcamItemTalkingUser' : 'webcamItem'}
+        className={cx({
+          [styles.content]: true,
+          [styles.talking]: voiceUser.talking,
+          [styles.fullscreen]: isFullscreenContext,
+        })}
       >
         {
           !videoIsReady
-          && <div className={styles.connecting} />
+          && (
+            <div
+              data-test="webcamConnecting"
+              className={cx({
+                [styles.connecting]: true,
+                [styles.content]: true,
+                [styles.talking]: voiceUser.talking,
+              })}
+            >
+              <span className={styles.loadingText}>{name}</span>
+            </div>
+          )
+
         }
+
+        {
+          shouldRenderReconnect
+          && <div className={styles.reconnecting} />
+        }
+
         <div
           className={styles.videoContainer}
           ref={(ref) => { this.videoContainer = ref; }}
         >
           <video
             muted
+            data-test={this.mirrorOwnWebcam ? 'mirroredVideoContainer' : 'videoContainer'}
             className={cx({
               [styles.media]: true,
-              [styles.cursorGrab]: !webcamDraggableState.dragging
-                && !isFullscreen && !swapLayout,
-              [styles.cursorGrabbing]: webcamDraggableState.dragging
-                && !isFullscreen && !swapLayout,
-              [styles.mirroredVideo]: this.mirrorOwnWebcam,
+              [styles.mirroredVideo]: (this.mirrorOwnWebcam && !mirrored)
+                || (!this.mirrorOwnWebcam && mirrored),
+              [styles.unhealthyStream]: shouldRenderReconnect,
             })}
             ref={(ref) => { this.videoTag = ref; }}
             autoPlay
@@ -223,64 +239,58 @@ class VideoListItem extends Component {
           />
           {videoIsReady && this.renderFullscreenButton()}
         </div>
-        <div className={styles.info}>
-          {enableVideoMenu && availableActions.length >= 3
-            ? (
-              <Dropdown className={isFirefox ? styles.dropdownFireFox
-                : styles.dropdown}
-              >
-                <DropdownTrigger className={styles.dropdownTrigger}>
-                  <span>{user.name}</span>
-                </DropdownTrigger>
-                <DropdownContent placement="top left" className={styles.dropdownContent}>
-                  <DropdownList className={styles.dropdownList}>
-                    {availableActions}
-                  </DropdownList>
-                </DropdownContent>
-              </Dropdown>
-            )
-            : (
-              <div className={isFirefox ? styles.dropdownFireFox
-                : styles.dropdown}
-              >
-                <span className={cx({
-                  [styles.userName]: true,
-                  [styles.noMenu]: numOfUsers < 3,
-                })}
-                >
-                  {user.name}
-                </span>
-              </div>
-            )
-          }
-          {voiceUser.muted && !voiceUser.listenOnly ? <Icon className={styles.muted} iconName="unmute_filled" /> : null}
-          {voiceUser.listenOnly ? <Icon className={styles.voice} iconName="listen" /> : null}
-        </div>
-        {
-          showStats
-            ? <VideoListItemStats toggleStats={this.toggleStats} stats={stats} />
-            : null
-        }
+        {videoIsReady
+          && (
+            <div className={styles.info}>
+              {enableVideoMenu && availableActions.length >= 1
+                ? (
+                  <BBBMenu
+                    trigger={<div tabIndex={0} className={styles.dropdownTrigger}>{name}</div>}
+                    actions={this.getAvailableActions()}
+                    opts={{
+                      id: "default-dropdown-menu",
+                      keepMounted: true,
+                      transitionDuration: 0,
+                      elevation: 3,
+                      getContentAnchorEl: null,
+                      fullwidth: "true",
+                      anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                      transformorigin: { vertical: 'bottom', horizontal: 'left' },
+                    }}
+                  />                  
+                )
+                : (
+                  <div className={isFirefox ? styles.dropdownFireFox
+                    : styles.dropdown}
+                  >
+                    <span className={cx({
+                      [styles.userName]: true,
+                      [styles.noMenu]: numOfStreams < 3,
+                    })}
+                    >
+                      {name}
+                    </span>
+                  </div>
+                )}
+              {voiceUser.muted && !voiceUser.listenOnly ? <Icon className={styles.muted} iconName="unmute_filled" /> : null}
+              {voiceUser.listenOnly ? <Icon className={styles.voice} iconName="listen" /> : null}
+              {voiceUser.joined && !voiceUser.muted ? <Icon className={styles.voice} iconName="unmute" /> : null}
+            </div>
+          )}
       </div>
     );
   }
 }
 
-export default injectIntl(withDraggableConsumer(VideoListItem));
+export default VideoListItem;
 
 VideoListItem.defaultProps = {
-  numOfUsers: 0,
+  numOfStreams: 0,
 };
 
 VideoListItem.propTypes = {
-  intl: intlShape.isRequired,
-  enableVideoStats: PropTypes.bool.isRequired,
   actions: PropTypes.arrayOf(PropTypes.object).isRequired,
-  user: PropTypes.objectOf(PropTypes.oneOfType([
-    PropTypes.bool,
-    PropTypes.number,
-    PropTypes.object,
-    PropTypes.string,
-  ])).isRequired,
-  numOfUsers: PropTypes.number,
+  cameraId: PropTypes.string.isRequired,
+  name: PropTypes.string.isRequired,
+  numOfStreams: PropTypes.number,
 };

@@ -1,22 +1,79 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Meteor } from 'meteor/meteor';
 import { withTracker } from 'meteor/react-meteor-data';
-import { Session } from 'meteor/session';
 import Meetings from '/imports/api/meetings';
-import Users from '/imports/api/users';
 import Auth from '/imports/ui/services/auth';
 import getFromUserSettings from '/imports/ui/services/users-settings';
-import userListService from '../user-list/service';
+import userListService from '/imports/ui/components/user-list/service';
+import { ChatContext } from '/imports/ui/components/components-data/chat-context/context';
+import { GroupChatContext } from '/imports/ui/components/components-data/group-chat-context/context';
+import { UsersContext } from '/imports/ui/components/components-data/users-context/context';
+import NoteService from '/imports/ui/components/note/service';
 import Service from './service';
 import NavBar from './component';
+import LayoutContext from '../layout/context';
 
 const PUBLIC_CONFIG = Meteor.settings.public;
 const ROLE_MODERATOR = PUBLIC_CONFIG.user.role_moderator;
-const NavBarContainer = ({ children, ...props }) => (
-  <NavBar {...props}>
-    {children}
-  </NavBar>
-);
+
+const checkUnreadMessages = ({
+  groupChatsMessages, groupChats, users, idChatOpen,
+}) => {
+  const activeChats = userListService.getActiveChats({ groupChatsMessages, groupChats, users });
+  const hasUnreadMessages = activeChats
+    .filter((chat) => chat.userId !== idChatOpen)
+    .some((chat) => chat.unreadCounter > 0);
+
+  return hasUnreadMessages;
+};
+
+const NavBarContainer = ({ children, ...props }) => {
+  const layoutContext = useContext(LayoutContext);
+  const { layoutContextState, layoutContextDispatch } = layoutContext;
+  const usingChatContext = useContext(ChatContext);
+  const usingUsersContext = useContext(UsersContext);
+  const usingGroupChatContext = useContext(GroupChatContext);
+  const { chats: groupChatsMessages } = usingChatContext;
+  const { users } = usingUsersContext;
+  const { groupChat: groupChats } = usingGroupChatContext;
+  const { ...rest } = props;
+  const {
+    input, output,
+  } = layoutContextState;
+  const { sidebarContent, sidebarNavigation } = input;
+  const { sidebarNavPanel } = sidebarNavigation;
+  const { sidebarContentPanel } = sidebarContent;
+  const { navBar } = output;
+  const hasUnreadNotes = NoteService.hasUnreadNotes(sidebarContentPanel);
+  const hasUnreadMessages = checkUnreadMessages(
+    { groupChatsMessages, groupChats, users: users[Auth.meetingID] },
+  );
+
+  const isExpanded = !!sidebarContentPanel || !!sidebarNavPanel;
+
+  const currentUser = users[Auth.meetingID][Auth.userID];
+  const amIModerator = currentUser.role === ROLE_MODERATOR;
+
+  return (
+    <NavBar
+      {...{
+        amIModerator,
+        hasUnreadMessages,
+        hasUnreadNotes,
+        sidebarNavPanel,
+        sidebarContentPanel,
+        sidebarNavigation,
+        sidebarContent,
+        layoutContextDispatch,
+        isExpanded,
+        ...rest,
+      }}
+      style={{ ...navBar }}
+    >
+      {children}
+    </NavBar>
+  );
+};
 
 export default withTracker(() => {
   const CLIENT_TITLE = getFromUserSettings('bbb_client_title', PUBLIC_CONFIG.app.clientTitle);
@@ -39,29 +96,13 @@ export default withTracker(() => {
     document.title = titleString;
   }
 
-  const checkUnreadMessages = () => {
-    const activeChats = userListService.getActiveChats();
-    const hasUnreadMessages = activeChats
-      .filter(chat => chat.userId !== Session.get('idChatOpen'))
-      .some(chat => chat.unreadCounter > 0);
-    return hasUnreadMessages;
-  };
-
   const { connectRecordingObserver, processOutsideToggleRecording } = Service;
-  const currentUser = Users.findOne({ userId: Auth.userID }, { fields: { role: 1 } });
-  const openPanel = Session.get('openPanel');
-  const isExpanded = openPanel !== '';
-  const amIModerator = currentUser.role === ROLE_MODERATOR;
-  const hasUnreadMessages = checkUnreadMessages();
 
   return {
-    amIModerator,
-    isExpanded,
     currentUserId: Auth.userID,
     processOutsideToggleRecording,
     connectRecordingObserver,
     meetingId,
     presentationTitle: meetingTitle,
-    hasUnreadMessages,
   };
 })(NavBarContainer);

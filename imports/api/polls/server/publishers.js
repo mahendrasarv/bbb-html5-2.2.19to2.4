@@ -1,21 +1,55 @@
 import { Meteor } from 'meteor/meteor';
 import Logger from '/imports/startup/server/logger';
+import Users from '/imports/api/users';
 import Polls from '/imports/api/polls';
-import { extractCredentials } from '/imports/api/common/server/helpers';
+import AuthTokenValidation, {
+  ValidationStates,
+} from '/imports/api/auth-token-validation';
 
-function currentPoll() {
-  if (!this.userId) {
+const ROLE_MODERATOR = Meteor.settings.public.user.role_moderator;
+
+function currentPoll(secretPoll) {
+  const tokenValidation = AuthTokenValidation.findOne({
+    connectionId: this.connection.id,
+  });
+
+  if (
+    !tokenValidation ||
+    tokenValidation.validationStatus !== ValidationStates.VALIDATED
+  ) {
+    Logger.warn(
+      `Publishing Polls was requested by unauth connection ${this.connection.id}`
+    );
     return Polls.find({ meetingId: '' });
   }
-  const { meetingId } = extractCredentials(this.userId);
 
-  const selector = {
-    meetingId,
-  };
+  const { meetingId, userId } = tokenValidation;
 
-  Logger.debug(`Publishing poll for meeting=${meetingId}`);
+  const User = Users.findOne({ userId, meetingId }, { fields: { role: 1, presenter: 1 } });
 
-  return Polls.find(selector);
+  if (!!User && (User.role === ROLE_MODERATOR || User.presenter)) {
+    Logger.debug('Publishing Polls', { meetingId, userId });
+
+    const selector = {
+      meetingId,
+    };
+
+    const options = { fields: {} };
+
+    const hasPoll = Polls.findOne(selector);
+
+    if ((hasPoll && hasPoll.secretPoll) || secretPoll) {
+      options.fields.responses = 0;
+    }
+
+    return Polls.find(selector, options);
+  }
+
+  Logger.warn(
+    'Publishing current-poll was requested by non-moderator connection',
+    { meetingId, userId, connectionId: this.connection.id },
+  );
+  return Polls.find({ meetingId: '' });
 }
 
 function publishCurrentPoll(...args) {
@@ -25,22 +59,38 @@ function publishCurrentPoll(...args) {
 
 Meteor.publish('current-poll', publishCurrentPoll);
 
-
 function polls() {
-  if (!this.userId) {
+  const tokenValidation = AuthTokenValidation.findOne({
+    connectionId: this.connection.id,
+  });
+
+  if (
+    !tokenValidation ||
+    tokenValidation.validationStatus !== ValidationStates.VALIDATED
+  ) {
+    Logger.warn(
+      `Publishing Polls was requested by unauth connection ${this.connection.id}`
+    );
     return Polls.find({ meetingId: '' });
   }
 
-  const { meetingId, requesterUserId } = extractCredentials(this.userId);
+  const options = {
+    fields: {
+      'answers.numVotes': 0,
+      responses: 0,
+    },
+  };
 
-  Logger.debug(`Publishing polls =${meetingId} ${requesterUserId}`);
+  const { meetingId, userId } = tokenValidation;
+
+  Logger.debug('Publishing polls', { meetingId, userId });
 
   const selector = {
     meetingId,
-    users: requesterUserId,
+    users: userId,
   };
 
-  return Polls.find(selector);
+  return Polls.find(selector, options);
 }
 
 function publish(...args) {

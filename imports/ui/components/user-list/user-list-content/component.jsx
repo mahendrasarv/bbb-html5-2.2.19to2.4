@@ -2,7 +2,7 @@ import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
 import { styles } from './styles';
 import UserParticipantsContainer from './user-participants/container';
-import UserMessages from './user-messages/component';
+import UserMessages from './user-messages/container';
 import UserNotesContainer from './user-notes/container';
 import UserCaptionsContainer from './user-captions/container';
 import WaitingUsers from './waiting-users/component';
@@ -10,7 +10,6 @@ import UserPolls from './user-polls/component';
 import BreakoutRoomItem from './breakout-room/component';
 
 const propTypes = {
-  activeChats: PropTypes.arrayOf(String).isRequired,
   compact: PropTypes.bool,
   intl: PropTypes.shape({
     formatMessage: PropTypes.func.isRequired,
@@ -18,6 +17,7 @@ const propTypes = {
   currentUser: PropTypes.shape({}).isRequired,
   isPublicChat: PropTypes.func.isRequired,
   setEmojiStatus: PropTypes.func.isRequired,
+  clearAllEmojiStatus: PropTypes.func.isRequired,
   roving: PropTypes.func.isRequired,
   pollIsOpen: PropTypes.bool.isRequired,
   forcePollOpen: PropTypes.bool.isRequired,
@@ -37,34 +37,38 @@ class UserContent extends PureComponent {
       intl,
       currentUser,
       setEmojiStatus,
+      clearAllEmojiStatus,
       roving,
       isPublicChat,
-      activeChats,
       pollIsOpen,
       forcePollOpen,
       hasBreakoutRoom,
       pendingUsers,
       requestUserInformation,
+      currentClosedChats,
+      sidebarContentPanel,
+      layoutContextDispatch,
+      startedChats,
     } = this.props;
 
     return (
       <div
         data-test="userListContent"
         className={styles.content}
-        role="complementary"
       >
         {CHAT_ENABLED
-          ? (<UserMessages
-            {...{
-              isPublicChat,
-              activeChats,
-              compact,
-              intl,
-              roving,
-            }}
-          />
-          ) : null
-        }
+          ? (
+            <UserMessages
+              {...{
+                isPublicChat,
+                compact,
+                intl,
+                roving,
+                currentClosedChats,
+                startedChats,
+              }}
+            />
+          ) : null}
         {currentUser.role === ROLE_MODERATOR
           ? (
             <UserCaptionsContainer
@@ -72,8 +76,7 @@ class UserContent extends PureComponent {
                 intl,
               }}
             />
-          ) : null
-        }
+          ) : null}
         <UserNotesContainer
           {...{
             intl,
@@ -85,24 +88,35 @@ class UserContent extends PureComponent {
               {...{
                 intl,
                 pendingUsers,
+                sidebarContentPanel,
+                layoutContextDispatch,
               }}
             />
-          ) : null
-        }
+          ) : null}
         <UserPolls
           isPresenter={currentUser.presenter}
           {...{
             pollIsOpen,
             forcePollOpen,
+            sidebarContentPanel,
+            layoutContextDispatch,
           }}
         />
-        <BreakoutRoomItem isPresenter={currentUser.presenter} hasBreakoutRoom={hasBreakoutRoom} />
+        <BreakoutRoomItem
+          isPresenter={currentUser.presenter}
+          {...{
+            hasBreakoutRoom,
+            sidebarContentPanel,
+            layoutContextDispatch,
+          }}
+        />
         <UserParticipantsContainer
           {...{
             compact,
             intl,
             currentUser,
             setEmojiStatus,
+            clearAllEmojiStatus,
             roving,
             requestUserInformation,
           }}

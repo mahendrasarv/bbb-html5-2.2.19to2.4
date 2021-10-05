@@ -3,14 +3,18 @@ import PropTypes from 'prop-types';
 import { defineMessages, injectIntl } from 'react-intl';
 import { Meteor } from 'meteor/meteor';
 import Auth from '/imports/ui/services/auth';
+import LearningDashboardService from '../learning-dashboard/service';
 import Button from '/imports/ui/components/button/component';
+import allowRedirectToLogoutURL from './service';
 import getFromUserSettings from '/imports/ui/services/users-settings';
 import logoutRouteHandler from '/imports/utils/logoutRouteHandler';
 import Rating from './rating/component';
 import { styles } from './styles';
 import logger from '/imports/startup/client/logger';
 import Users from '/imports/api/users';
+import Meetings from '/imports/api/meetings';
 import AudioManager from '/imports/ui/services/audio-manager';
+import { meetingIsBreakout } from '/imports/ui/components/app/service';
 
 const intlMessage = defineMessages({
   410: {
@@ -32,6 +36,18 @@ const intlMessage = defineMessages({
   messageEnded: {
     id: 'app.meeting.endedMessage',
     description: 'message saying to go back to home screen',
+  },
+  messageEndedByUser: {
+    id: 'app.meeting.endedByUserMessage',
+    description: 'message informing who ended the meeting',
+  },
+  messageEndedByNoModeratorSingular: {
+    id: 'app.meeting.endedByNoModeratorMessageSingular',
+    description: 'message informing that the meeting was ended due to no moderator present (singular)',
+  },
+  messageEndedByNoModeratorPlural: {
+    id: 'app.meeting.endedByNoModeratorMessagePlural',
+    description: 'message informing that the meeting was ended due to no moderator present (plural)',
   },
   buttonOkay: {
     id: 'app.meeting.endNotification.ok.label',
@@ -81,6 +97,10 @@ const intlMessage = defineMessages({
     id: 'app.meeting.logout.userInactivityEjectReason',
     description: 'message for whom was kicked by inactivity',
   },
+  open_activity_report_btn: {
+    id: 'app.learning-dashboard.clickHereToOpen',
+    description: 'description of link to open activity report',
+  },
 });
 
 const propTypes = {
@@ -88,6 +108,13 @@ const propTypes = {
     formatMessage: PropTypes.func.isRequired,
   }).isRequired,
   code: PropTypes.string.isRequired,
+  ejectedReason: PropTypes.string,
+  endedReason: PropTypes.string,
+};
+
+const defaultProps = {
+  ejectedReason: null,
+  endedReason: null,
 };
 
 class MeetingEnded extends PureComponent {
@@ -101,6 +128,7 @@ class MeetingEnded extends PureComponent {
     super(props);
     this.state = {
       selected: 0,
+      dispatched: false,
     };
 
     const user = Users.findOne({ userId: Auth.userID });
@@ -108,9 +136,24 @@ class MeetingEnded extends PureComponent {
       this.localUserRole = user.role;
     }
 
+    const meeting = Meetings.findOne({ id: user.meetingID });
+    if (meeting) {
+      this.endWhenNoModeratorMinutes = meeting.durationProps.endWhenNoModeratorDelayInMinutes;
+
+      const endedBy = Users.findOne({
+        userId: meeting.meetingEndedBy,
+      }, { fields: { name: 1 } });
+
+      if (endedBy) {
+        this.meetingEndedBy = endedBy.name;
+      }
+    }
+
     this.setSelectedStar = this.setSelectedStar.bind(this);
+    this.confirmRedirect = this.confirmRedirect.bind(this);
     this.sendFeedback = this.sendFeedback.bind(this);
-    this.shouldShowFeedback = getFromUserSettings('bbb_ask_for_feedback_on_logout', Meteor.settings.public.app.askForFeedbackOnLogout);
+    this.shouldShowFeedback = this.shouldShowFeedback.bind(this);
+    this.getEndingMessage = this.getEndingMessage.bind(this);
 
     AudioManager.exitAudio();
     Meteor.disconnect();
@@ -122,15 +165,46 @@ class MeetingEnded extends PureComponent {
     });
   }
 
-  sendFeedback() {
+  shouldShowFeedback() {
+    const { dispatched } = this.state;
+    return getFromUserSettings('bbb_ask_for_feedback_on_logout', Meteor.settings.public.app.askForFeedbackOnLogout) && !dispatched;
+  }
+
+  confirmRedirect() {
     const {
       selected,
     } = this.state;
 
     if (selected <= 0) {
-      logoutRouteHandler();
-      return;
+      if (meetingIsBreakout()) window.close();
+      if (allowRedirectToLogoutURL()) logoutRouteHandler();
     }
+  }
+
+  getEndingMessage() {
+    const { intl, code, endedReason } = this.props;
+
+    if (endedReason && endedReason === 'ENDED_DUE_TO_NO_MODERATOR') {
+      return this.endWhenNoModeratorMinutes === 1
+        ? intl.formatMessage(intlMessage.messageEndedByNoModeratorSingular)
+        : intl.formatMessage(intlMessage.messageEndedByNoModeratorPlural, { 0: this.endWhenNoModeratorMinutes });
+    }
+
+    if (this.meetingEndedBy) {
+      return intl.formatMessage(intlMessage.messageEndedByUser, { 0: this.meetingEndedBy });
+    }
+
+    if (intlMessage[code]) {
+      return intl.formatMessage(intlMessage[code]);
+    }
+
+    return intl.formatMessage(intlMessage[430]);
+  }
+
+  sendFeedback() {
+    const {
+      selected,
+    } = this.state;
 
     const { fullname } = Auth.credentials;
 
@@ -143,7 +217,7 @@ class MeetingEnded extends PureComponent {
       comment: MeetingEnded.getComment(),
       userRole: this.localUserRole,
     };
-    const url = '/html5client/feedback';
+    const url = './feedback';
     const options = {
       method: 'POST',
       body: JSON.stringify(message),
@@ -155,44 +229,104 @@ class MeetingEnded extends PureComponent {
     // client logger
     logger.info({ logCode: 'feedback_functionality', extraInfo: { feedback: message } }, 'Feedback component');
 
-    const FEEDBACK_WAIT_TIME = 500;
-    setTimeout(() => {
-      fetch(url, options)
-        .then(() => {
-          logoutRouteHandler();
-        })
-        .catch(() => {
-          logoutRouteHandler();
-        });
-    }, FEEDBACK_WAIT_TIME);
+    this.setState({
+      dispatched: true,
+    });
+
+    if (allowRedirectToLogoutURL()) {
+      const FEEDBACK_WAIT_TIME = 500;
+      setTimeout(() => {
+        fetch(url, options)
+          .then(() => {
+            logoutRouteHandler();
+          })
+          .catch(() => {
+            logoutRouteHandler();
+          });
+      }, FEEDBACK_WAIT_TIME);
+    }
   }
 
-  render() {
-    const { intl, code } = this.props;
-    const {
-      selected,
-    } = this.state;
+  renderNoFeedback() {
+    const { intl, code, ejectedReason } = this.props;
 
-    const noRating = selected <= 0;
+    const { locale } = intl;
 
-    logger.info({ logCode: 'meeting_ended_code', extraInfo: { endedCode: code } }, 'Meeting ended component');
+    const logMessage = ejectedReason === 'user_requested_eject_reason' ? 'User removed from the meeting' : 'Meeting ended component, no feedback configured';
+    logger.info({ logCode: 'meeting_ended_code', extraInfo: { endedCode: code, reason: ejectedReason } }, logMessage);
 
     return (
       <div className={styles.parent}>
         <div className={styles.modal}>
           <div className={styles.content}>
             <h1 className={styles.title} data-test="meetingEndedModalTitle">
-              {
-                intl.formatMessage(intlMessage[code] || intlMessage[430])
-              }
+              {this.getEndingMessage()}
+            </h1>
+            {!allowRedirectToLogoutURL() ? null : (
+              <div>
+                {
+                  LearningDashboardService.isModerator()
+                  && LearningDashboardService.getLearningDashboardAccessToken() != null
+                    ? (
+                      <div className={styles.text}>
+                        <Button
+                          icon="multi_whiteboard"
+                          color="default"
+                          onClick={() => LearningDashboardService.openLearningDashboardUrl(locale)}
+                          className={styles.button}
+                          label={intl.formatMessage(intlMessage.open_activity_report_btn)}
+                          description={intl.formatMessage(intlMessage.open_activity_report_btn)}
+                        />
+                      </div>
+                    ) : null
+                }
+                <div className={styles.text}>
+                  {intl.formatMessage(intlMessage.messageEnded)}
+                </div>
+
+                <Button
+                  color="primary"
+                  onClick={this.confirmRedirect}
+                  className={styles.button}
+                  label={intl.formatMessage(intlMessage.buttonOkay)}
+                  description={intl.formatMessage(intlMessage.confirmDesc)}
+                />
+              </div>
+
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  renderFeedback() {
+    const { intl, code, ejectedReason } = this.props;
+    const {
+      selected,
+      dispatched,
+    } = this.state;
+
+    const noRating = selected <= 0;
+
+    const logMessage = ejectedReason === 'user_requested_eject_reason' ? 'User removed from the meeting' : 'Meeting ended component, feedback allowed';
+    logger.info({ logCode: 'meeting_ended_code', extraInfo: { endedCode: code, reason: ejectedReason } }, logMessage);
+
+    return (
+      <div className={styles.parent}>
+        <div className={styles.modal} data-test="meetingEndedModal">
+          <div className={styles.content}>
+            <h1 className={styles.title}>
+              {this.getEndingMessage()}
             </h1>
             <div className={styles.text}>
-              {this.shouldShowFeedback
+              {this.shouldShowFeedback()
                 ? intl.formatMessage(intlMessage.subtitle)
                 : intl.formatMessage(intlMessage.messageEnded)}
             </div>
-            {this.shouldShowFeedback ? (
-              <div>
+
+            {this.shouldShowFeedback() ? (
+              <div data-test="rating">
                 <Rating
                   total="5"
                   onRate={this.setSelectedStar}
@@ -207,25 +341,39 @@ class MeetingEnded extends PureComponent {
                   />
                 ) : null}
               </div>
-            ) : null }
-            <Button
-              color="primary"
-              onClick={this.sendFeedback}
-              className={styles.button}
-              label={noRating
-                ? intl.formatMessage(intlMessage.buttonOkay)
-                : intl.formatMessage(intlMessage.sendLabel)}
-              description={noRating
-                ? intl.formatMessage(intlMessage.confirmDesc)
-                : intl.formatMessage(intlMessage.sendDesc)}
-            />
+            ) : null}
+            {noRating && allowRedirectToLogoutURL() ? (
+              <Button
+                color="primary"
+                onClick={this.confirmRedirect}
+                className={styles.button}
+                label={intl.formatMessage(intlMessage.buttonOkay)}
+                description={intl.formatMessage(intlMessage.confirmDesc)}
+              />
+            ) : null}
+
+            {!noRating && !dispatched ? (
+              <Button
+                color="primary"
+                onClick={this.sendFeedback}
+                className={styles.button}
+                label={intl.formatMessage(intlMessage.sendLabel)}
+                description={intl.formatMessage(intlMessage.sendDesc)}
+              />
+            ) : null}
           </div>
         </div>
       </div>
     );
   }
+
+  render() {
+    if (this.shouldShowFeedback()) return this.renderFeedback();
+    return this.renderNoFeedback();
+  }
 }
 
 MeetingEnded.propTypes = propTypes;
+MeetingEnded.defaultProps = defaultProps;
 
 export default injectIntl(MeetingEnded);

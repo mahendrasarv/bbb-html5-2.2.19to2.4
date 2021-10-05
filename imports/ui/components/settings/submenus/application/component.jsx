@@ -1,13 +1,19 @@
-import React, { Fragment } from 'react';
+import React from 'react';
 import cx from 'classnames';
 import Button from '/imports/ui/components/button/component';
 import Toggle from '/imports/ui/components/switch/component';
+import LocalesDropdown from '/imports/ui/components/locales-dropdown/component';
 import { defineMessages, injectIntl } from 'react-intl';
 import BaseMenu from '../base/component';
 import { styles } from '../styles';
+import VideoService from '/imports/ui/components/video-provider/service';
+import { ACTIONS, LAYOUT_TYPE } from '/imports/ui/components/layout/enums';
 
 const MIN_FONTSIZE = 0;
-const CHAT_ENABLED = Meteor.settings.public.chat.enabled;
+const SHOW_AUDIO_FILTERS = (Meteor.settings.public.app
+  .showAudioFilters === undefined)
+  ? true
+  : Meteor.settings.public.app.showAudioFilters;
 
 const intlMessages = defineMessages({
   applicationSectionTitle: {
@@ -18,21 +24,9 @@ const intlMessages = defineMessages({
     id: 'app.submenu.application.animationsLabel',
     description: 'animations label',
   },
-  audioAlertLabel: {
-    id: 'app.submenu.application.audioAlertLabel',
-    description: 'audio notification label',
-  },
-  pushAlertLabel: {
-    id: 'app.submenu.application.pushAlertLabel',
-    description: 'push notifiation label',
-  },
-  userJoinAudioAlertLabel: {
-    id: 'app.submenu.application.userJoinAudioAlertLabel',
-    description: 'audio notification when a user joins',
-  },
-  userJoinPushAlertLabel: {
-    id: 'app.submenu.application.userJoinPushAlertLabel',
-    description: 'push notification when a user joins',
+  audioFilterLabel: {
+    id: 'app.submenu.application.audioFilterLabel',
+    description: 'audio filters label',
   },
   fontSizeControlLabel: {
     id: 'app.submenu.application.fontSizeControlLabel',
@@ -70,6 +64,34 @@ const intlMessages = defineMessages({
     id: 'app.submenu.application.noLocaleOptionLabel',
     description: 'default change language option when no locales available',
   },
+  paginationEnabledLabel: {
+    id: 'app.submenu.application.paginationEnabledLabel',
+    description: 'enable/disable video pagination',
+  },
+  layoutOptionLabel: {
+    id: 'app.submenu.application.layoutOptionLabel',
+    description: 'layout options',
+  },
+  pushLayoutOptionLabel: {
+    id: 'app.submenu.application.pushLayoutOptionLabel',
+    description: 'enable/disable push layout to all users',
+  },
+  customLayout: {
+    id: 'app.layout.style.custom',
+    description: 'label for custom layout style',
+  },
+  smartLayout: {
+    id: 'app.layout.style.smart',
+    description: 'label for smart layout style',
+  },
+  presentationFocusLayout: {
+    id: 'app.layout.style.presentationFocus',
+    description: 'label for presentationFocus layout style',
+  },
+  videoFocusLayout: {
+    id: 'app.layout.style.videoFocus',
+    description: 'label for videoFocus layout style',
+  },
 });
 
 class ApplicationMenu extends BaseMenu {
@@ -85,6 +107,7 @@ class ApplicationMenu extends BaseMenu {
       settings: props.settings,
       isLargestFontSize: false,
       isSmallestFontSize: false,
+      showSelect: false,
       fontSizes: [
         '12px',
         '14px',
@@ -92,11 +115,18 @@ class ApplicationMenu extends BaseMenu {
         '18px',
         '20px',
       ],
+      audioFilterEnabled: ApplicationMenu.isAudioFilterEnabled(props
+        .settings.microphoneConstraints),
     };
   }
 
   componentDidMount() {
     this.setInitialFontSize();
+  }
+
+  componentWillUnmount() {
+    // fix Warning: Can't perform a React state update on an unmounted component
+    this.setState = () => {};
   }
 
   setInitialFontSize() {
@@ -116,6 +146,49 @@ class ApplicationMenu extends BaseMenu {
     });
   }
 
+  static isAudioFilterEnabled(_constraints) {
+    if (typeof _constraints === 'undefined') return true;
+
+    const _isConstraintEnabled = (constraintValue) => {
+      switch (typeof constraintValue) {
+        case 'boolean':
+          return constraintValue;
+        case 'string':
+          return constraintValue === 'true';
+        case 'object':
+          return !!(constraintValue.exact || constraintValue.ideal);
+        default:
+          return false;
+      }
+    };
+
+    let isAnyFilterEnabled = true;
+
+    const constraints = _constraints && (typeof _constraints.advanced === 'object')
+      ? _constraints.advanced
+      : _constraints || {};
+
+    isAnyFilterEnabled = Object.values(constraints).find(
+      (constraintValue) => _isConstraintEnabled(constraintValue),
+    );
+
+    return isAnyFilterEnabled;
+  }
+
+  handleAudioFilterChange() {
+    const _audioFilterEnabled = !ApplicationMenu.isAudioFilterEnabled(this
+      .state.settings.microphoneConstraints);
+    const _newConstraints = {
+      autoGainControl: _audioFilterEnabled,
+      echoCancellation: _audioFilterEnabled,
+      noiseSuppression: _audioFilterEnabled,
+    };
+
+    const obj = this.state;
+    obj.settings.microphoneConstraints = _newConstraints;
+    this.handleUpdateSettings(this.state.settings, obj.settings);
+  }
+
   handleUpdateFontSize(size) {
     const obj = this.state;
     obj.settings.fontSize = size;
@@ -123,11 +196,17 @@ class ApplicationMenu extends BaseMenu {
   }
 
   changeFontSize(size) {
+    const { layoutContextDispatch } = this.props;
     const obj = this.state;
     obj.settings.fontSize = size;
     this.setState(obj, () => {
       ApplicationMenu.setHtmlFontSize(this.state.settings.fontSize);
       this.handleUpdateFontSize(this.state.settings.fontSize);
+    });
+
+    layoutContextDispatch({
+      type: ACTIONS.SET_FONT_SIZE,
+      value: parseInt(size.slice(0, -2), 10),
     });
   }
 
@@ -152,15 +231,150 @@ class ApplicationMenu extends BaseMenu {
     this.setState({ isLargestFontSize: false });
   }
 
-  handleSelectChange(fieldname, options, e) {
+  handleSelectChange(fieldname, e) {
     const obj = this.state;
-    obj.settings[fieldname] = e.target.value.toLowerCase().replace('_', '-');
+    obj.settings[fieldname] = e.target.value;
     this.handleUpdateSettings('application', obj.settings);
   }
 
+  renderAudioFilters() {
+    let audioFilterOption = null;
+
+    if (SHOW_AUDIO_FILTERS) {
+      const { intl, showToggleLabel, displaySettingsStatus } = this.props;
+      const { settings } = this.state;
+      const audioFilterStatus = ApplicationMenu
+        .isAudioFilterEnabled(settings.microphoneConstraints);
+
+      audioFilterOption = (
+        <div className={styles.row}>
+          <div className={styles.col} aria-hidden="true">
+            <div className={styles.formElement}>
+              <span className={styles.label}>
+                {intl.formatMessage(intlMessages.audioFilterLabel)}
+              </span>
+            </div>
+          </div>
+          <div className={styles.col}>
+            <div className={cx(styles.formElement, styles.pullContentRight)}>
+              {displaySettingsStatus(audioFilterStatus)}
+              <Toggle
+                icons={false}
+                defaultChecked={this.state.audioFilterEnabled}
+                onChange={() => this.handleAudioFilterChange()}
+                ariaLabel={intl.formatMessage(intlMessages.audioFilterLabel)}
+                showToggleLabel={showToggleLabel}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return audioFilterOption;
+  }
+
+  renderPaginationToggle() {
+    // See VideoService's method for an explanation
+    if (!VideoService.shouldRenderPaginationToggle()) return false;
+
+    const { intl, showToggleLabel, displaySettingsStatus } = this.props;
+    const { settings } = this.state;
+
+    return (
+      <div className={styles.row}>
+        <div className={styles.col} aria-hidden="true">
+          <div className={styles.formElement}>
+            {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
+            <label className={styles.label}>
+              {intl.formatMessage(intlMessages.paginationEnabledLabel)}
+            </label>
+          </div>
+        </div>
+        <div className={styles.col}>
+          <div className={cx(styles.formElement, styles.pullContentRight)}>
+            {displaySettingsStatus(settings.paginationEnabled)}
+            <Toggle
+              icons={false}
+              defaultChecked={settings.paginationEnabled}
+              onChange={() => this.handleToggle('paginationEnabled')}
+              ariaLabel={intl.formatMessage(intlMessages.paginationEnabledLabel)}
+              showToggleLabel={showToggleLabel}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  renderChangeLayout() {
+    const {
+      intl, showToggleLabel, displaySettingsStatus, isModerator,
+    } = this.props;
+    const { settings } = this.state;
+
+    return (
+      <>
+        <div className={styles.row}>
+          <div className={styles.col} aria-hidden="true">
+            <div className={styles.formElement}>
+              <label htmlFor="layoutList" className={styles.label}>
+                {intl.formatMessage(intlMessages.layoutOptionLabel)}
+              </label>
+            </div>
+          </div>
+          <div className={styles.col}>
+            <div className={cx(styles.formElement, styles.pullContentRight)}>
+              <select
+                className={styles.select}
+                onChange={(e) => this.handleSelectChange('selectedLayout', e)}
+                id="layoutList"
+                value={settings.selectedLayout}
+              >
+                {
+                  Object.values(LAYOUT_TYPE)
+                    .map((layout) => <option key={layout} value={layout}>{intl.formatMessage(intlMessages[`${layout}Layout`])}</option>)
+                }
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {isModerator ? (
+          <div className={styles.row}>
+            <div className={styles.col} aria-hidden="true">
+              <div className={styles.formElement}>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
+                <label className={styles.label}>
+                  {intl.formatMessage(intlMessages.pushLayoutOptionLabel)}
+                </label>
+              </div>
+            </div>
+            <div className={styles.col}>
+              <div className={cx(styles.formElement, styles.pullContentRight)}>
+                {displaySettingsStatus(settings.pushLayoutToEveryone)}
+                <Toggle
+                  icons={false}
+                  defaultChecked={settings.pushLayoutToEveryone}
+                  onChange={() => this.handleToggle('pushLayoutToEveryone')}
+                  ariaLabel={intl.formatMessage(intlMessages.pushLayoutOptionLabel)}
+                  showToggleLabel={showToggleLabel}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   render() {
-    const { availableLocales, intl } = this.props;
-    const { isLargestFontSize, isSmallestFontSize, settings } = this.state;
+    const {
+      allLocales, intl, showToggleLabel, displaySettingsStatus,
+    } = this.props;
+    const {
+      isLargestFontSize, isSmallestFontSize, settings,
+    } = this.state;
 
     // conversions can be found at http://pxtoem.com
     const pixelPercentage = {
@@ -175,6 +389,8 @@ class ApplicationMenu extends BaseMenu {
 
     const ariaValueLabel = intl.formatMessage(intlMessages.currentValue, { 0: `${pixelPercentage[settings.fontSize]}` });
 
+    const showSelect = allLocales && allLocales.length > 0;
+
     return (
       <div>
         <div>
@@ -187,6 +403,7 @@ class ApplicationMenu extends BaseMenu {
           <div className={styles.row}>
             <div className={styles.col} aria-hidden="true">
               <div className={styles.formElement}>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
                 <label className={styles.label}>
                   {intl.formatMessage(intlMessages.animationsLabel)}
                 </label>
@@ -194,99 +411,20 @@ class ApplicationMenu extends BaseMenu {
             </div>
             <div className={styles.col}>
               <div className={cx(styles.formElement, styles.pullContentRight)}>
+                {displaySettingsStatus(settings.animations)}
                 <Toggle
                   icons={false}
-                  defaultChecked={this.state.settings.animations}
+                  defaultChecked={settings.animations}
                   onChange={() => this.handleToggle('animations')}
                   ariaLabel={intl.formatMessage(intlMessages.animationsLabel)}
+                  showToggleLabel={showToggleLabel}
                 />
               </div>
             </div>
           </div>
 
-          {CHAT_ENABLED
-            ? (<Fragment>
-              <div className={styles.row}>
-                <div className={styles.col} aria-hidden="true">
-                  <div className={styles.formElement}>
-                    <label className={styles.label}>
-                      {intl.formatMessage(intlMessages.audioAlertLabel)}
-                    </label>
-                  </div>
-                </div>
-                <div className={styles.col}>
-                  <div className={cx(styles.formElement, styles.pullContentRight)}>
-                    <Toggle
-                      icons={false}
-                      defaultChecked={this.state.settings.chatAudioAlerts}
-                      onChange={() => this.handleToggle('chatAudioAlerts')}
-                      ariaLabel={intl.formatMessage(intlMessages.audioAlertLabel)}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className={styles.row}>
-                <div className={styles.col} aria-hidden="true">
-                  <div className={styles.formElement}>
-                    <label className={styles.label}>
-                      {intl.formatMessage(intlMessages.pushAlertLabel)}
-                    </label>
-                  </div>
-                </div>
-                <div className={styles.col}>
-                  <div className={cx(styles.formElement, styles.pullContentRight)}>
-                    <Toggle
-                      icons={false}
-                      defaultChecked={this.state.settings.chatPushAlerts}
-                      onChange={() => this.handleToggle('chatPushAlerts')}
-                      ariaLabel={intl.formatMessage(intlMessages.pushAlertLabel)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </Fragment>
-            ) : null
-          }
-
-          <div className={styles.row}>
-            <div className={styles.col} aria-hidden="true">
-              <div className={styles.formElement}>
-                <label className={styles.label}>
-                  {intl.formatMessage(intlMessages.userJoinAudioAlertLabel)}
-                </label>
-              </div>
-            </div>
-            <div className={styles.col}>
-              <div className={cx(styles.formElement, styles.pullContentRight)}>
-                <Toggle
-                  icons={false}
-                  defaultChecked={this.state.settings.userJoinAudioAlerts}
-                  onChange={() => this.handleToggle('userJoinAudioAlerts')}
-                  ariaLabel={intl.formatMessage(intlMessages.userJoinAudioAlertLabel)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.col} aria-hidden="true">
-              <div className={styles.formElement}>
-                <label className={styles.label}>
-                  {intl.formatMessage(intlMessages.userJoinPushAlertLabel)}
-                </label>
-              </div>
-            </div>
-            <div className={styles.col}>
-              <div className={cx(styles.formElement, styles.pullContentRight)}>
-                <Toggle
-                  icons={false}
-                  defaultChecked={this.state.settings.userJoinPushAlerts}
-                  onChange={() => this.handleToggle('userJoinPushAlerts')}
-                  ariaLabel={intl.formatMessage(intlMessages.userJoinPushAlertLabel)}
-                />
-              </div>
-            </div>
-          </div>
+          {this.renderAudioFilters()}
+          {this.renderPaginationToggle()}
 
           <div className={styles.row}>
             <div className={styles.col} aria-hidden="true">
@@ -302,29 +440,31 @@ class ApplicationMenu extends BaseMenu {
             </div>
             <div className={styles.col}>
               <span className={cx(styles.formElement, styles.pullContentRight)}>
-                {availableLocales && availableLocales.length > 0 ? (
-                  <select
-                    id="langSelector"
-                    defaultValue={this.state.settings.locale}
-                    lang={this.state.settings.locale}
-                    className={styles.select}
-                    onChange={this.handleSelectChange.bind(this, 'locale', availableLocales)}
-                  >
-                    <option disabled>{intl.formatMessage(intlMessages.languageOptionLabel)}</option>
-                    {availableLocales.map((locale, index) => (
-                      <option key={index} value={locale.locale} lang={locale.locale}>
-                        {locale.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
+                {showSelect ? (
+                  <LocalesDropdown
+                    allLocales={allLocales}
+                    handleChange={(e) => this.handleSelectChange('locale', e)}
+                    value={settings.locale}
+                    elementId="langSelector"
+                    elementClass={styles.select}
+                    selectMessage={intl.formatMessage(intlMessages.languageOptionLabel)}
+                  />
+                ) : (
+                  <div className={styles.spinnerOverlay}>
+                    <div className={styles.bounce1} />
+                    <div className={styles.bounce2} />
+                    <div />
+                  </div>
+                )}
               </span>
             </div>
           </div>
+
           <hr className={styles.separator} />
           <div className={styles.row}>
             <div className={styles.col}>
               <div className={styles.formElement}>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
                 <label className={styles.label}>
                   {intl.formatMessage(intlMessages.fontSizeControlLabel)}
                 </label>
@@ -332,8 +472,9 @@ class ApplicationMenu extends BaseMenu {
             </div>
             <div className={styles.col}>
               <div aria-hidden className={cx(styles.formElement, styles.pullContentCenter)}>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
                 <label className={cx(styles.label, styles.bold)}>
-                  {`${pixelPercentage[this.state.settings.fontSize]}`}
+                  {`${pixelPercentage[settings.fontSize]}`}
                 </label>
               </div>
             </div>
@@ -368,6 +509,7 @@ class ApplicationMenu extends BaseMenu {
               </div>
             </div>
           </div>
+          {this.renderChangeLayout()}
         </div>
       </div>
     );

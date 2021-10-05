@@ -1,22 +1,22 @@
 import _ from 'lodash';
 import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
-import { defineMessages, intlShape } from 'react-intl';
+import { defineMessages } from 'react-intl';
 import Button from '/imports/ui/components/button/component';
-import Dropdown from '/imports/ui/components/dropdown/component';
-import DropdownTrigger from '/imports/ui/components/dropdown/trigger/component';
-import DropdownContent from '/imports/ui/components/dropdown/content/component';
-import DropdownList from '/imports/ui/components/dropdown/list/component';
-import DropdownListItem from '/imports/ui/components/dropdown/list/item/component';
-import PresentationUploaderContainer from '/imports/ui/components/presentation/presentation-uploader/container';
 import { withModalMounter } from '/imports/ui/components/modal/service';
 import withShortcutHelper from '/imports/ui/components/shortcut-help/service';
-import { styles } from '../styles';
 import ExternalVideoModal from '/imports/ui/components/external-video-player/modal/container';
+import RandomUserSelectContainer from '/imports/ui/components/modal/random-user/container';
+import BBBMenu from '/imports/ui/components/menu/component';
+import cx from 'classnames';
+import { styles } from '../styles';
+import { PANELS, ACTIONS } from '../../layout/enums';
 
 const propTypes = {
   amIPresenter: PropTypes.bool.isRequired,
-  intl: intlShape.isRequired,
+  intl: PropTypes.shape({
+    formatMessage: PropTypes.func.isRequired,
+  }).isRequired,
   mountModal: PropTypes.func.isRequired,
   amIModerator: PropTypes.bool.isRequired,
   shortcuts: PropTypes.string,
@@ -74,7 +74,17 @@ const intlMessages = defineMessages({
     id: 'app.actionsBar.actionsDropdown.stopShareExternalVideo',
     description: 'Stop sharing external video button',
   },
+  selectRandUserLabel: {
+    id: 'app.actionsBar.actionsDropdown.selectRandUserLabel',
+    description: 'Label for selecting a random user',
+  },
+  selectRandUserDesc: {
+    id: 'app.actionsBar.actionsDropdown.selectRandUserDesc',
+    description: 'Description for select random user option',
+  },
 });
+
+const handlePresentationClick = () => Session.set('showUploadPresentationView', true);
 
 class ActionsDropdown extends PureComponent {
   constructor(props) {
@@ -83,17 +93,23 @@ class ActionsDropdown extends PureComponent {
     this.presentationItemId = _.uniqueId('action-item-');
     this.pollId = _.uniqueId('action-item-');
     this.takePresenterId = _.uniqueId('action-item-');
+    this.selectUserRandId = _.uniqueId('action-item-');
 
-    this.handlePresentationClick = this.handlePresentationClick.bind(this);
     this.handleExternalVideoClick = this.handleExternalVideoClick.bind(this);
+    this.makePresentationItems = this.makePresentationItems.bind(this);
   }
 
-  componentWillUpdate(nextProps) {
-    const { amIPresenter: isPresenter } = nextProps;
-    const { amIPresenter: wasPresenter, mountModal } = this.props;
+  componentDidUpdate(prevProps) {
+    const { amIPresenter: wasPresenter } = prevProps;
+    const { amIPresenter: isPresenter, mountModal } = this.props;
     if (wasPresenter && !isPresenter) {
       mountModal(null);
     }
+  }
+
+  handleExternalVideoClick() {
+    const { mountModal } = this.props;
+    mountModal(<ExternalVideoModal />);
   }
 
   getAvailableActions() {
@@ -104,86 +120,125 @@ class ActionsDropdown extends PureComponent {
       handleTakePresenter,
       isSharingVideo,
       isPollingEnabled,
+      isSelectRandomUserEnabled,
       stopExternalVideoShare,
+      mountModal,
+      layoutContextDispatch,
     } = this.props;
 
     const {
       pollBtnLabel,
-      pollBtnDesc,
       presentationLabel,
-      presentationDesc,
       takePresenter,
-      takePresenterDesc,
     } = intlMessages;
 
     const {
       formatMessage,
     } = intl;
 
-    return _.compact([
-      (amIPresenter && isPollingEnabled
-        ? (
-          <DropdownListItem
-            icon="polling"
-            label={formatMessage(pollBtnLabel)}
-            description={formatMessage(pollBtnDesc)}
-            key={this.pollId}
-            onClick={() => {
-              if (Session.equals('pollInitiated', true)) {
-                Session.set('resetPollPanel', true);
-              }
-              Session.set('openPanel', 'poll');
-              Session.set('forcePollOpen', true);
-            }}
-          />
-        )
-        : null),
-      (!amIPresenter
-        ? (
-          <DropdownListItem
-            icon="presentation"
-            label={formatMessage(takePresenter)}
-            description={formatMessage(takePresenterDesc)}
-            key={this.takePresenterId}
-            onClick={() => handleTakePresenter()}
-          />
-        )
-        : null),
-      (amIPresenter
-        ? (
-          <DropdownListItem
-            data-test="uploadPresentation"
-            icon="presentation"
-            label={formatMessage(presentationLabel)}
-            description={formatMessage(presentationDesc)}
-            key={this.presentationItemId}
-            onClick={this.handlePresentationClick}
-          />
-        )
-        : null),
-      (amIPresenter && allowExternalVideo
-        ? (
-          <DropdownListItem
-            icon="video"
-            label={!isSharingVideo ? intl.formatMessage(intlMessages.startExternalVideoLabel)
-              : intl.formatMessage(intlMessages.stopExternalVideoLabel)}
-            description="External Video"
-            key="external-video"
-            onClick={isSharingVideo ? stopExternalVideoShare : this.handleExternalVideoClick}
-          />
-        )
-        : null),
-    ]);
+    const actions = [];
+
+    if (amIPresenter) {
+      actions.push({
+        icon: "presentation",
+        dataTest: "uploadPresentation",
+        label: formatMessage(presentationLabel),
+        key: this.presentationItemId,
+        onClick: handlePresentationClick,
+        dividerTop: this.props?.presentations?.length > 1 ? true : false,
+      })
+    }
+
+    if (amIPresenter && isPollingEnabled) {
+      actions.push({
+        icon: "polling",
+        dataTest: "polling",
+        label: formatMessage(pollBtnLabel),
+        key: this.pollId,
+        onClick: () => {
+          if (Session.equals('pollInitiated', true)) {
+            Session.set('resetPollPanel', true);
+          }
+          layoutContextDispatch({
+            type: ACTIONS.SET_SIDEBAR_CONTENT_IS_OPEN,
+            value: true,
+          });
+          layoutContextDispatch({
+            type: ACTIONS.SET_SIDEBAR_CONTENT_PANEL,
+            value: PANELS.POLL,
+          });
+          Session.set('forcePollOpen', true);
+        },
+      })
+    }
+
+    if (!amIPresenter) {
+      actions.push({
+        icon: "presentation",
+        label: formatMessage(takePresenter),
+        key: this.takePresenterId,
+        onClick: () => handleTakePresenter(),
+      });
+    }
+
+    if (amIPresenter && allowExternalVideo) {
+      actions.push({
+        icon: "video",
+        label: !isSharingVideo ? intl.formatMessage(intlMessages.startExternalVideoLabel)
+          : intl.formatMessage(intlMessages.stopExternalVideoLabel),
+        key: "external-video",
+        onClick: isSharingVideo ? stopExternalVideoShare : this.handleExternalVideoClick,
+      })
+    }
+
+    if (amIPresenter && isSelectRandomUserEnabled) {
+      actions.push({
+        icon: "user",
+        label: intl.formatMessage(intlMessages.selectRandUserLabel),
+        key: this.selectUserRandId,
+        onClick: () => mountModal(<RandomUserSelectContainer isSelectedUser={false} />),
+      })
+    }
+
+    return actions;
   }
 
-  handleExternalVideoClick() {
-    const { mountModal } = this.props;
-    mountModal(<ExternalVideoModal />);
-  }
+  makePresentationItems() {
+    const {
+      presentations,
+      setPresentation,
+      podIds,
+    } = this.props;
 
-  handlePresentationClick() {
-    const { mountModal } = this.props;
-    mountModal(<PresentationUploaderContainer />);
+    if (!podIds || podIds.length < 1) return [];
+
+    // We still have code for other pods from the Flash client. This intentionally only cares
+    // about the first one because it's the default.
+    const { podId } = podIds[0];
+
+    const presentationItemElements = presentations
+      .sort((a, b) => (a.name.localeCompare(b.name)))
+      .map((p) => {
+        const itemStyles = {};
+        itemStyles[styles.presentationItem] = true;
+        itemStyles[styles.isCurrent] = p.current;
+
+        return (
+          {
+            className: cx(itemStyles),
+            icon: "file",
+            iconRight: p.current ? 'check' : null,
+            label: p.name,
+            description: "uploaded presentation file",
+            key: `uploaded-presentation-${p.id}`,
+            onClick: () => {
+              setPresentation(p.id, podId);
+            },
+          }
+        );
+      });
+
+    return presentationItemElements;
   }
 
   render() {
@@ -193,9 +248,13 @@ class ActionsDropdown extends PureComponent {
       amIModerator,
       shortcuts: OPEN_ACTIONS_AK,
       isMeteorConnected,
+      isDropdownOpen,
     } = this.props;
 
     const availableActions = this.getAvailableActions();
+    const availablePresentations = this.makePresentationItems();
+    const children = availablePresentations.length > 1 && amIPresenter
+      ? availablePresentations.concat(availableActions) : availableActions;
 
     if ((!amIPresenter && !amIModerator)
       || availableActions.length === 0
@@ -204,12 +263,14 @@ class ActionsDropdown extends PureComponent {
     }
 
     return (
-      <Dropdown ref={(ref) => { this._dropdown = ref; }}>
-        <DropdownTrigger tabIndex={0} accessKey={OPEN_ACTIONS_AK}>
+      <BBBMenu
+        classes={[styles.offsetBottom]}
+        accessKey={OPEN_ACTIONS_AK}
+        trigger={
           <Button
+            className={isDropdownOpen ? styles.hideDropdownButton : ''}
             hideLabel
             aria-label={intl.formatMessage(intlMessages.actionsLabel)}
-            className={styles.button}
             label={intl.formatMessage(intlMessages.actionsLabel)}
             icon="plus"
             color="primary"
@@ -217,13 +278,20 @@ class ActionsDropdown extends PureComponent {
             circle
             onClick={() => null}
           />
-        </DropdownTrigger>
-        <DropdownContent placement="top left">
-          <DropdownList>
-            {availableActions}
-          </DropdownList>
-        </DropdownContent>
-      </Dropdown>
+        }
+        actions={children}
+        opts={{
+          disablePortal: true,
+          id: "default-dropdown-menu",
+          keepMounted: true,
+          transitionDuration: 0,
+          elevation: 3,
+          getContentAnchorEl: null,
+          fullwidth: "true",
+          anchorOrigin: { vertical: 'top', horizontal: 'left' },
+          transformorigin: { vertical: 'top', horizontal: 'left' },
+        }}
+      />
     );
   }
 }

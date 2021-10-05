@@ -1,4 +1,4 @@
-@import "../../stylesheets/variables/_all";
+@import "../../stylesheets/variables/breakpoints";
 
 :root {
   --mobile-nav-height: 5rem;
@@ -9,9 +9,12 @@
 }
 
 .navbar {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  height:var(--mobile-nav-height);
+  text-align: center;
+  font-size: 1.5rem;
+  padding: var(--bars-padding) var(--bars-padding) 0 var(--bars-padding);
 }
 
 .top,
@@ -109,6 +112,8 @@
     box-shadow: none;
   }
 
+  z-index: 3;
+
   &:hover,
   &:focus {
     span {
@@ -119,5 +124,19 @@
   }
 }
 
-.btnSettings {
+.dropdown{
+  z-index: 99;
+}
+
+.offsetTop {
+  :global(.MuiPaper-root) {
+    top: 4rem !important;
+    bottom: auto !important;
+  }
+}
+
+.hideDropdownButton {
+  @include mq($small-only) {
+    display: none;
+  }
 }

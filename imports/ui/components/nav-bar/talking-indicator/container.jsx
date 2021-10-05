@@ -1,18 +1,40 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { withTracker } from 'meteor/react-meteor-data';
 import VoiceUsers from '/imports/api/voice-users';
 import Auth from '/imports/ui/services/auth';
 import { debounce } from 'lodash';
 import TalkingIndicator from './component';
 import { makeCall } from '/imports/ui/services/api';
+import { meetingIsBreakout } from '/imports/ui/components/app/service';
 import Service from './service';
+import LayoutContext from '../../layout/context';
 
 const APP_CONFIG = Meteor.settings.public.app;
 const { enableTalkingIndicator } = APP_CONFIG;
+const TALKING_INDICATOR_MUTE_INTERVAL = 500;
 
 const TalkingIndicatorContainer = (props) => {
   if (!enableTalkingIndicator) return null;
-  return (<TalkingIndicator {...props} />);
+  const layoutContext = useContext(LayoutContext);
+  const { layoutContextState, layoutContextDispatch } = layoutContext;
+  const { input } = layoutContextState;
+  const { sidebarContent, sidebarNavigation } = input;
+  const { sidebarNavPanel } = sidebarNavigation;
+  const { sidebarContentPanel } = sidebarContent;
+  const sidebarNavigationIsOpen = sidebarNavigation.isOpen;
+  const sidebarContentIsOpen = sidebarContent.isOpen;
+  return (
+    <TalkingIndicator
+      {...{
+        sidebarNavPanel,
+        sidebarNavigationIsOpen,
+        sidebarContentPanel,
+        sidebarContentIsOpen,
+        layoutContextDispatch,
+        ...props,
+      }}
+    />
+  );
 };
 
 export default withTracker(() => {
@@ -46,7 +68,7 @@ export default withTracker(() => {
     }
   }
 
-  const muteUser = (id) => {
+  const muteUser = debounce((id) => {
     const user = VoiceUsers.findOne({ meetingId, voiceUserId: id }, {
       fields: {
         muted: 1,
@@ -54,11 +76,11 @@ export default withTracker(() => {
     });
     if (user.muted) return;
     makeCall('toggleVoice', id);
-  };
+  }, TALKING_INDICATOR_MUTE_INTERVAL, { leading: true, trailing: false });
 
   return {
     talkers,
-    muteUser: id => debounce(muteUser(id), 500, { leading: true, trailing: false }),
-    openPanel: Session.get('openPanel'),
+    muteUser,
+    isBreakoutRoom: meetingIsBreakout(),
   };
 })(TalkingIndicatorContainer);

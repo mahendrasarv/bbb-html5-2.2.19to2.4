@@ -1,20 +1,55 @@
-@import "/imports/ui/stylesheets/variables/_all";
-@import "/imports/ui/components/video-provider/video-list/styles";
+@import "/imports/ui/components/media/styles";
+@import '/imports/ui/components/loading-screen/styles';
 
-.connecting {
-  @extend .connecting;
-  z-index: -1;
-  background-color: transparent;
-  color: var(--color-white);
-  font-size: 2.5rem * 5;
-}
-
-.screenshareContainer{
+.screenshareContainer {
   display: flex;
   align-items: center;
   justify-content: center;
+  background-color: var(--color-content-background);
+  width: 100%;
+  height: 100%;
+}
 
-  position: relative;
+.screenshareContainerPresenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background-color: var(--color-content-background);
+  width: 100%;
+  height: 100%;
+}
+
+.screenshareContainerInside {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.mainText {
+  color: var(--color-white);
+  font-size: 2rem;
+}
+
+.screenshareContainerDefault {
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  padding-top: 4rem;
+}
+
+.unhealthyStream {
+  filter: grayscale(50%) opacity(50%);
+}
+
+.spinnerWrapper {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
   width: 100%;
   height: 100%;
 }

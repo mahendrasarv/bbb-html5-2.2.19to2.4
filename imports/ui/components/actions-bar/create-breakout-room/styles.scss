@@ -1,4 +1,5 @@
-@import "/imports/ui/stylesheets/variables/_all";
+@import "/imports/ui/stylesheets/variables/breakpoints";
+@import "/imports/ui/stylesheets/variables/placeholders";
 @import "/imports/ui/stylesheets/mixins/_scrollable";
 
 input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button {
@@ -36,8 +37,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 }
 
 .content {
-  display: flex;
-  flex-direction: column;
+  @extend %flex-column;
 }
 
 .labelText {
@@ -107,6 +107,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
   display: flex;
   align-items: center;
   font-size: var(--font-size-small);
+  margin-bottom: 0;
   & > * {
     margin: 0 .5rem 0 0;
 
@@ -117,11 +118,12 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 }
 
 .boxContainer {
-  height: 50vh;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  grid-template-rows: 33% 33% 33%;
-  grid-gap: 1.5rem 1rem;
+  grid-template-columns: repeat(3, minmax(4rem, 16rem));
+  grid-template-rows: repeat(auto-fill, minmax(4rem, 8rem));
+  grid-gap: 1.6rem 1rem;
+  box-sizing: border-box;
+  padding-bottom: 1rem;
 }
 
 .changeToWarn {
@@ -132,6 +134,27 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 
   & > .freeJoinLabel {
     color: var(--color-danger);
+  }
+
+  & > .labelText {
+    color: var(--color-danger);
+  }
+
+  & .duration {
+    border-color: var(--color-danger) !important;
+  }
+}
+
+
+.breakoutNameInput {
+  width: 100%;
+  text-align: left;
+  font-weight: normal;
+  padding: .25rem;
+  margin: 0;
+  &::placeholder {
+    color: var(--color-gray);
+    opacity: 1;
   }
 }
 
@@ -150,7 +173,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
   font-weight: bolder;
 }
 
-.leastOneWarn {
+.spanWarn {
   margin: .25rem;
   position: absolute;
   font-size: var(--font-size-small);
@@ -160,13 +183,13 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 }
 
 .roomUserItem {
-  width: 11rem;
-  margin: 0;
+  @extend %no-margin;
   padding: .25rem 0 .25rem .25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+  border-bottom: solid .5px var(--color-gray-lighter);
 
   [dir="rtl"] & {
     padding: .25rem .25rem .25rem 0;
@@ -181,14 +204,13 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 /* mobile */
 
 .listContainer {
-  display: flex;
+  @extend %flex-column;
   justify-content: flex-start;
-  flex-direction: column;
 }
 
 .itemTitle {
+  @extend %no-margin;
   color: var(--color-blue-light);
-  margin: 0;
 }
 
 .roomItem {
@@ -332,9 +354,8 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 }
 
 .checkBoxesContainer {
-  display: flex;
-  flex-direction: row;
-  margin-top: 1rem;
+  @extend %flex-row;
+  margin-top: 2rem;
 }
 
 .withError {
@@ -343,4 +364,24 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 
 .errorBorder {
   border-color: var(--color-danger) !important;
+}
+
+.disableItem {
+  cursor: not-allowed;
+  color: var(--color-gray-lighter);
+}
+
+.lockIcon {
+  float: right;
+  margin-right: 1rem;
+  @include mq($small-only) {
+    margin-left: .5rem;
+    margin-right: auto;
+    float: left;
+  }
+  &:after {
+    font-family: 'bbb-icons';
+    content: "\E926";
+    color: var(--color-gray-light);
+  }
 }

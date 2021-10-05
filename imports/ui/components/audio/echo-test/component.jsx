@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { Session } from 'meteor/session';
 import Button from '/imports/ui/components/button/component';
-import { defineMessages, intlShape, injectIntl } from 'react-intl';
+import { defineMessages, injectIntl } from 'react-intl';
 import { styles } from './styles';
 
 const intlMessages = defineMessages({
@@ -27,7 +27,9 @@ const intlMessages = defineMessages({
 const propTypes = {
   handleYes: PropTypes.func.isRequired,
   handleNo: PropTypes.func.isRequired,
-  intl: intlShape.isRequired,
+  intl: PropTypes.shape({
+    formatMessage: PropTypes.func.isRequired,
+  }).isRequired,
 };
 
 class EchoTest extends Component {
@@ -52,7 +54,8 @@ class EchoTest extends Component {
     const {
       intl,
     } = this.props;
-    const disableYesButtonClicked = callback => () => {
+    const { disabled } = this.state;
+    const disableYesButtonClicked = (callback) => () => {
       this.setState({ disabled: true }, callback);
     };
     return (
@@ -62,7 +65,7 @@ class EchoTest extends Component {
           label={intl.formatMessage(intlMessages.confirmLabel)}
           aria-label={intl.formatMessage(intlMessages.confirmAriaLabel)}
           icon="thumbs_up"
-          disabled={this.state.disabled}
+          disabled={disabled}
           circle
           color="success"
           size="jumbo"

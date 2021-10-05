@@ -16,10 +16,7 @@ export default class ToolbarMenuItem extends Component {
     this.handleOnMouseUp = this.handleOnMouseUp.bind(this);
     this.handleOnMouseDown = this.handleOnMouseDown.bind(this);
     this.setRef = this.setRef.bind(this);
-  }
 
-  // generating a unique ref string for the toolbar-item
-  componentWillMount() {
     this.uniqueRef = _.uniqueId('toolbar-menu-item');
   }
 
@@ -79,6 +76,8 @@ export default class ToolbarMenuItem extends Component {
       className,
       children,
       showCornerTriangle,
+      expanded,
+      haspopup,
     } = this.props;
 
     return (
@@ -87,6 +86,8 @@ export default class ToolbarMenuItem extends Component {
         hidden={disabled}
       >
         <Button
+          aria-expanded={expanded}
+          aria-haspopup={haspopup}
           hideLabel
           role="button"
           color="default"

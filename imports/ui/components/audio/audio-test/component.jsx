@@ -1,11 +1,13 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import Button from '/imports/ui/components/button/component';
-import { defineMessages, intlShape, injectIntl } from 'react-intl';
+import { defineMessages, injectIntl } from 'react-intl';
 import { styles } from './styles.scss';
 
 const propTypes = {
-  intl: intlShape.isRequired,
+  intl: PropTypes.shape({
+    formatMessage: PropTypes.func.isRequired,
+  }).isRequired,
   handlePlayAudioSample: PropTypes.func.isRequired,
   outputDeviceId: PropTypes.string,
 };
@@ -38,9 +40,9 @@ class AudioTest extends React.Component {
       <Button
         className={styles.testAudioBtn}
         label={intl.formatMessage(intlMessages.playSoundLabel)}
-        icon={'unmute'}
-        size={'sm'}
-        color={'primary'}
+        icon="unmute"
+        size="sm"
+        color="primary"
         onClick={() => this.handlePlayAudioSample(outputDeviceId)}
       />
     );

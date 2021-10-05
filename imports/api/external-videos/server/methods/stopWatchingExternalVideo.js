@@ -1,27 +1,25 @@
-import { Meteor } from 'meteor/meteor';
+import { check } from 'meteor/check';
 import Logger from '/imports/startup/server/logger';
-import Meetings from '/imports/api/meetings';
-import RedisPubSub from '/imports/startup/server/redis';
 import { extractCredentials } from '/imports/api/common/server/helpers';
+import RedisPubSub from '/imports/startup/server/redis';
 
-export default function stopWatchingExternalVideo(options) {
+export default function stopWatchingExternalVideo() {
   const REDIS_CONFIG = Meteor.settings.private.redis;
   const CHANNEL = REDIS_CONFIG.channels.toAkkaApps;
-  const EVENT_NAME = 'StopExternalVideoMsg';
+  const EVENT_NAME = 'StopExternalVideoPubMsg';
 
-  if (this.userId) {
-    options = extractCredentials(this.userId);
+  try {
+    const { meetingId, requesterUserId } = extractCredentials(this.userId);
+
+    check(meetingId, String);
+    check(requesterUserId, String);
+
+    const payload = {};
+
+    Logger.info(`User ${requesterUserId} stoping an external video for meeting ${meetingId}`);
+
+    RedisPubSub.publishUserMessage(CHANNEL, EVENT_NAME, meetingId, requesterUserId, payload);
+  } catch (error) {
+    Logger.error(`Error on stoping an external video for meeting ${meetingId}: ${error}`);
   }
-
-  const { meetingId, requesterUserId } = options;
-
-  const meeting = Meetings.findOne({ meetingId });
-  if (!meeting || meeting.externalVideoUrl === null) return;
-
-  Meetings.update({ meetingId }, { $set: { externalVideoUrl: null } });
-  const payload = {};
-
-  Logger.info(`User id=${requesterUserId} stopped sharing an external video for meeting=${meetingId}`);
-
-  RedisPubSub.publishUserMessage(CHANNEL, EVENT_NAME, meetingId, requesterUserId, payload);
 }

@@ -1,9 +1,8 @@
 import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
 import Button from '/imports/ui/components/button/component';
-import { defineMessages, intlShape, injectIntl } from 'react-intl';
+import { defineMessages, injectIntl } from 'react-intl';
 import { styles } from './styles';
-
 
 const intlMessages = defineMessages({
   confirmLabel: {
@@ -18,7 +17,9 @@ const intlMessages = defineMessages({
 
 const propTypes = {
   handleAllowAutoplay: PropTypes.func.isRequired,
-  intl: intlShape.isRequired,
+  intl: PropTypes.shape({
+    formatMessage: PropTypes.func.isRequired,
+  }).isRequired,
 };
 
 class AudioAutoplayPrompt extends PureComponent {

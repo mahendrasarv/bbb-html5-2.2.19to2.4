@@ -3,14 +3,26 @@ import PropTypes from 'prop-types';
 import ShapeDrawListener from './shape-draw-listener/component';
 import TextDrawListener from './text-draw-listener/component';
 import PencilDrawListener from './pencil-draw-listener/component';
+import ShapePointerListener from './shape-pointer-listener/component';
+import PencilPointerListener from './pencil-pointer-listener/component';
 import CursorListener from './cursor-listener/component';
 
 export default class WhiteboardOverlay extends Component {
   // a function to transform a screen point to svg point
   // accepts and returns a point of type SvgPoint and an svg object
+  // if unable to get the screen CTM, returns an out
+  // of bounds (-1, -1) svg point
   static coordinateTransform(screenPoint, someSvgObject) {
     const CTM = someSvgObject.getScreenCTM();
-    return screenPoint.matrixTransform(CTM.inverse());
+    if (CTM !== null) {
+      return screenPoint.matrixTransform(CTM.inverse());
+    }
+
+    const outOfBounds = someSvgObject.createSVGPoint();
+    outOfBounds.x = -1;
+    outOfBounds.y = -1;
+
+    return outOfBounds;
   }
 
   // Removes selection from all selected elements
@@ -157,6 +169,17 @@ export default class WhiteboardOverlay extends Component {
     const { tool } = drawSettings;
 
     if (tool === 'triangle' || tool === 'rectangle' || tool === 'ellipse' || tool === 'line') {
+      if (window.PointerEvent) {
+        return (
+          <ShapePointerListener
+            userId={userId}
+            actions={actions}
+            drawSettings={drawSettings}
+            whiteboardId={whiteboardId}
+          />
+        );
+      }
+
       return (
         <ShapeDrawListener
           userId={userId}
@@ -166,6 +189,19 @@ export default class WhiteboardOverlay extends Component {
         />
       );
     } if (tool === 'pencil') {
+      if (window.PointerEvent) {
+        return (
+          <PencilPointerListener
+            userId={userId}
+            whiteboardId={whiteboardId}
+            drawSettings={drawSettings}
+            actions={actions}
+            physicalSlideWidth={physicalSlideWidth}
+            physicalSlideHeight={physicalSlideHeight}
+          />
+        );
+      }
+
       return (
         <PencilDrawListener
           userId={userId}
@@ -200,8 +236,7 @@ export default class WhiteboardOverlay extends Component {
       resetTextShapeSession,
       setTextShapeActiveId,
       contextMenuHandler,
-      addAnnotationToDiscardedList,
-      undoAnnotation,
+      clearPreview,
       updateCursor,
     } = this.props;
 
@@ -217,8 +252,7 @@ export default class WhiteboardOverlay extends Component {
       resetTextShapeSession,
       setTextShapeActiveId,
       contextMenuHandler,
-      addAnnotationToDiscardedList,
-      undoAnnotation,
+      clearPreview,
     };
 
     return (
@@ -256,6 +290,8 @@ WhiteboardOverlay.propTypes = {
   viewBoxHeight: PropTypes.number.isRequired,
   // Defines a handler to publish an annotation to the server
   sendAnnotation: PropTypes.func.isRequired,
+  // Defines a handler to clear a shape preview
+  clearPreview: PropTypes.func.isRequired,
   // Defines a current whiteboard id
   whiteboardId: PropTypes.string.isRequired,
   // Defines an object containing current settings for drawing
